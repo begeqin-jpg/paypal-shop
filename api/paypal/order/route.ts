@@ -15,10 +15,11 @@ async function getAccessToken() {
   });
 
   const data = await res.json();
-  return data.access_token;
+  if (!res.ok) throw new Error(JSON.stringify(data));
+  return data.access_token as string;
 }
 
-export async function POST(req) {
+export async function POST() {
   const token = await getAccessToken();
 
   const orderRes = await fetch(`${process.env.PAYPAL_BASE}/v2/checkout/orders`, {
@@ -31,15 +32,14 @@ export async function POST(req) {
       intent: "CAPTURE",
       purchase_units: [
         {
-          amount: {
-            currency_code: "USD",
-            value: "10.00",
-          },
+          amount: { currency_code: "USD", value: "10.00" },
         },
       ],
     }),
   });
 
   const order = await orderRes.json();
+  if (!orderRes.ok) return Response.json(order, { status: orderRes.status });
+
   return Response.json({ id: order.id });
 }

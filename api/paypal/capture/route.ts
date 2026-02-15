@@ -15,10 +15,11 @@ async function getAccessToken() {
   });
 
   const data = await res.json();
-  return data.access_token;
+  if (!res.ok) throw new Error(JSON.stringify(data));
+  return data.access_token as string;
 }
 
-export async function POST(req) {
+export async function POST(req: Request) {
   const { orderID } = await req.json();
   const token = await getAccessToken();
 
@@ -34,5 +35,5 @@ export async function POST(req) {
   );
 
   const data = await capRes.json();
-  return Response.json(data);
+  return Response.json(data, { status: capRes.status });
 }
