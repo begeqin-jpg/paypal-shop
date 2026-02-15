@@ -60,7 +60,17 @@ export async function POST(req) {
   });
 
   if (resp.ACK !== "Success" && resp.ACK !== "SuccessWithWarning") {
-    return Response.json({ error: "SetExpressCheckout failed", resp }, { status: 500 });
+    return Response.json(
+      {
+        error: "SetExpressCheckout failed",
+        ack: resp.ACK,
+        short: resp.L_SHORTMESSAGE0,
+        long: resp.L_LONGMESSAGE0,
+        code: resp.L_ERRORCODE0,
+        resp,
+      },
+      { status: 500 }
+    );
   }
 
   const token = resp.TOKEN;
