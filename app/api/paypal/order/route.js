@@ -16,10 +16,28 @@ async function getAccessToken() {
 
   const data = await res.json();
   if (!res.ok) throw new Error(JSON.stringify(data));
-  return data.access_token as string;
+  return data.access_token;
 }
 
-export async function POST() {
+export async function POST(req) {
+  const { items } = await req.json(); // [{ sku: "sku1", qty: 2 }, ...]
+
+  // ТВОЙ прайс (лучше потом вынести в БД/файл)
+  const PRICE = {
+    sku1: 9.99,
+    sku2: 14.5,
+  };
+
+  let total = 0;
+  for (const it of items || []) {
+    const unit = PRICE[it.sku];
+    if (!unit || !Number.isFinite(it.qty) || it.qty < 1) {
+      return Response.json({ error: "Bad cart" }, { status: 400 });
+    }
+    total += unit * it.qty;
+  }
+  total = Math.round(total * 100) / 100;
+
   const token = await getAccessToken();
 
   const orderRes = await fetch(`${process.env.PAYPAL_BASE}/v2/checkout/orders`, {
@@ -32,7 +50,7 @@ export async function POST() {
       intent: "CAPTURE",
       purchase_units: [
         {
-          amount: { currency_code: "USD", value: "10.00" },
+          amount: { currency_code: "USD", value: total.toFixed(2) },
         },
       ],
     }),
