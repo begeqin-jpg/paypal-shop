@@ -19,7 +19,7 @@ async function getAccessToken() {
   return data.access_token;
 }
 
-export async function POST(req: Request) {
+export async function POST(req) {
   const { orderID } = await req.json();
   const token = await getAccessToken();
 
