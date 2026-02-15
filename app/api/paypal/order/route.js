@@ -20,16 +20,18 @@ async function getAccessToken() {
 }
 
 export async function POST(req) {
-  const { items } = await req.json(); // [{ sku: "sku1", qty: 2 }, ...]
+  const body = await req.json().catch(() => ({}));
+  const items = body.items || []; // [{ sku: "sku1", qty: 2 }, ...]
 
-  // ТВОЙ прайс (лучше потом вынести в БД/файл)
+  // Серверный прайс (замени на свой)
   const PRICE = {
     sku1: 9.99,
     sku2: 14.5,
   };
 
+  // Валидация + расчёт суммы
   let total = 0;
-  for (const it of items || []) {
+  for (const it of items) {
     const unit = PRICE[it.sku];
     if (!unit || !Number.isFinite(it.qty) || it.qty < 1) {
       return Response.json({ error: "Bad cart" }, { status: 400 });
@@ -38,7 +40,15 @@ export async function POST(req) {
   }
   total = Math.round(total * 100) / 100;
 
+  // Если корзина пустая — можно запретить
+  if (total <= 0) {
+    return Response.json({ error: "Cart is empty" }, { status: 400 });
+  }
+
   const token = await getAccessToken();
+
+  const BASE_URL =
+    process.env.PUBLIC_BASE_URL || "https://paypal-shop.vercel.app"; // можно добавить env и хранить тут домен
 
   const orderRes = await fetch(`${process.env.PAYPAL_BASE}/v2/checkout/orders`, {
     method: "POST",
@@ -48,9 +58,37 @@ export async function POST(req) {
     },
     body: JSON.stringify({
       intent: "CAPTURE",
+
+      // 👇 Это важный блок, приближающий UX к “Proton”
+      application_context: {
+        brand_name: "bege store",
+        landing_page: "LOGIN", // чаще показывает полный checkout flow
+        user_action: "PAY_NOW",
+        shipping_preference: "GET_FROM_FILE", // подтянуть адрес из PayPal
+        return_url: `${BASE_URL}/success`,
+        cancel_url: `${BASE_URL}/cancel`,
+      },
+
       purchase_units: [
         {
-          amount: { currency_code: "USD", value: total.toFixed(2) },
+          amount: {
+            currency_code: "USD",
+            value: total.toFixed(2),
+            breakdown: {
+              item_total: { currency_code: "USD", value: total.toFixed(2) },
+            },
+          },
+
+          // 👇 Детали товаров (чтобы PayPal показывал “item details”)
+          items: items.map((it) => ({
+            name: it.sku,
+            quantity: String(it.qty),
+            unit_amount: {
+              currency_code: "USD",
+              value: PRICE[it.sku].toFixed(2),
+            },
+            category: "PHYSICAL_GOODS",
+          })),
         },
       ],
     }),
