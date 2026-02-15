@@ -1,84 +1,163 @@
 "use client";
-import { useEffect } from "react";
+
+import { useMemo, useState } from "react";
+
+type CartItem = { sku: "sku1" | "sku2"; qty: number };
 
 export default function Home() {
-  useEffect(() => {
-    const script = document.createElement("script");
-    script.src = `https://www.paypal.com/sdk/js?client-id=${process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID}&currency=USD`;
-    script.async = true;
+  // демо-корзина
+  const [cart, setCart] = useState<CartItem[]>([
+    { sku: "sku1", qty: 2 },
+    { sku: "sku2", qty: 1 },
+  ]);
 
-    script.onload = () => {
-      // @ts-ignore
-      window.paypal
-        .Buttons({
-          createOrder: async () => {
-            // ТЕСТОВАЯ КОРЗИНА (замени на свою логику/данные)
-            const items = [
-              { sku: "sku1", qty: 2 },
-              { sku: "sku2", qty: 1 },
-            ];
+  // демо-прайс (только для отображения на странице)
+  const PRICE: Record<CartItem["sku"], number> = {
+    sku1: 9.99,
+    sku2: 14.5,
+  };
 
-            const res = await fetch("/api/paypal/order", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ items }),
-            });
+  const total = useMemo(() => {
+    const sum = cart.reduce((acc, it) => acc + PRICE[it.sku] * it.qty, 0);
+    return Math.round(sum * 100) / 100;
+  }, [cart]);
 
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok) {
-              console.error("Create order failed:", data);
-              throw new Error(data?.error || data?.message || "Create order failed");
-            }
+  const inc = (sku: CartItem["sku"]) => {
+    setCart((prev) =>
+      prev.map((it) => (it.sku === sku ? { ...it, qty: it.qty + 1 } : it))
+    );
+  };
 
-            if (!data?.id) {
-              console.error("No order id returned:", data);
-              throw new Error("No order id returned from server");
-            }
+  const dec = (sku: CartItem["sku"]) => {
+    setCart((prev) =>
+      prev.map((it) =>
+        it.sku === sku ? { ...it, qty: Math.max(1, it.qty - 1) } : it
+      )
+    );
+  };
 
-            return data.id;
-          },
+  const startExpressCheckout = async () => {
+    try {
+      const res = await fetch("/api/pp-ec/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: cart }),
+      });
 
-          onApprove: async (data: any) => {
-            const res = await fetch("/api/paypal/capture", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ orderID: data.orderID }),
-            });
+      const data = await res.json().catch(() => ({}));
 
-            const cap = await res.json().catch(() => ({}));
-            if (!res.ok) {
-              console.error("Capture failed:", cap);
-              alert("Ошибка при подтверждении оплаты. Смотри console.");
-              return;
-            }
+      if (!res.ok) {
+        console.error("EC start failed:", data);
+        alert("Ошибка Express Checkout. Открой консоль (F12) и пришли ошибку.");
+        return;
+      }
 
-            alert("Оплата прошла!");
-          },
+      if (!data?.redirectUrl) {
+        console.error("No redirectUrl:", data);
+        alert("Сервер не вернул redirectUrl.");
+        return;
+      }
 
-          onError: (err: any) => {
-            console.error("PayPal Buttons error:", err);
-            alert("PayPal ошибка. Открой консоль (F12) и пришли текст ошибки.");
-          },
-        })
-        .render("#paypal-buttons");
-    };
-
-    document.body.appendChild(script);
-
-    // На всякий случай: чтобы не дублировать скрипт при hot reload
-    return () => {
-      script.remove();
-    };
-  }, []);
+      window.location.href = data.redirectUrl;
+    } catch (e) {
+      console.error(e);
+      alert("Ошибка сети/скрипта. Открой консоль (F12) и пришли ошибку.");
+    }
+  };
 
   return (
-    <main style={{ padding: 40 }}>
-      <h1>Магазин</h1>
-      <p>Оплата через PayPal (USD)</p>
-      <div id="paypal-buttons"></div>
-      <p style={{ marginTop: 16, fontSize: 12, opacity: 0.8 }}>
-        Если окно PayPal закрывается — открой DevTools (F12) → Console и пришли ошибку.
+    <main style={{ padding: 40, maxWidth: 720 }}>
+      <h1 style={{ marginBottom: 8 }}>bege store</h1>
+      <p style={{ marginTop: 0, opacity: 0.8 }}>
+        PayPal Express Checkout (Classic)
       </p>
+
+      <div style={{ marginTop: 24 }}>
+        <h2 style={{ fontSize: 18 }}>Корзина</h2>
+
+        <div
+          style={{
+            display: "grid",
+            gap: 12,
+            marginTop: 12,
+            padding: 16,
+            border: "1px solid #333",
+            borderRadius: 12,
+          }}
+        >
+          {cart.map((it) => (
+            <div
+              key={it.sku}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+              }}
+            >
+              <div>
+                <div style={{ fontWeight: 600 }}>{it.sku}</div>
+                <div style={{ fontSize: 12, opacity: 0.8 }}>
+                  ${PRICE[it.sku].toFixed(2)} / шт
+                </div>
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <button onClick={() => dec(it.sku)} style={btnSmall}>
+                  −
+                </button>
+                <div style={{ minWidth: 24, textAlign: "center" }}>{it.qty}</div>
+                <button onClick={() => inc(it.sku)} style={btnSmall}>
+                  +
+                </button>
+              </div>
+            </div>
+          ))}
+
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              borderTop: "1px solid #333",
+              paddingTop: 12,
+              marginTop: 4,
+              fontWeight: 700,
+            }}
+          >
+            <span>Итого</span>
+            <span>${total.toFixed(2)} USD</span>
+          </div>
+
+          <button
+            onClick={startExpressCheckout}
+            style={{
+              marginTop: 8,
+              padding: "12px 14px",
+              borderRadius: 10,
+              border: "none",
+              cursor: "pointer",
+              fontWeight: 700,
+            }}
+          >
+            PayPal Express Checkout
+          </button>
+
+          <div style={{ fontSize: 12, opacity: 0.75 }}>
+            Если после редиректа хочешь завершать оплату — нужны страницы:
+            <code> /pp-ec/return </code> и <code> /pp-ec/cancel </code>.
+          </div>
+        </div>
+      </div>
     </main>
   );
 }
+
+const btnSmall: React.CSSProperties = {
+  width: 34,
+  height: 34,
+  borderRadius: 8,
+  border: "1px solid #555",
+  background: "transparent",
+  color: "inherit",
+  cursor: "pointer",
+};
